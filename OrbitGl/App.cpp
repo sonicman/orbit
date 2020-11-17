@@ -28,6 +28,7 @@
 #include "FunctionsDataView.h"
 #include "GlCanvas.h"
 #include "ImGuiOrbit.h"
+#include "MainThreadExecutor.h"
 #include "ModulesDataView.h"
 #include "OrbitBase/Logging.h"
 #include "OrbitBase/Result.h"
@@ -101,6 +102,32 @@ PresetLoadState GetPresetLoadStateForProcess(
 std::unique_ptr<OrbitApp> GOrbitApp;
 bool DoZoom = false;
 
+OrbitApp::OrbitApp(std::unique_ptr<MainThreadExecutor> main_thread_executer)
+    : main_thread_executor_(std::move(main_thread_executer)) {
+  thread_pool_ = ThreadPool::Create(4 /*min_size*/, 256 /*max_size*/, absl::Seconds(1));
+  main_thread_id_ = std::this_thread::get_id();
+  data_manager_ = std::make_unique<DataManager>(main_thread_id_);
+  module_manager_ = std::make_unique<OrbitClientData::ModuleManager>();
+  // TODO (170468590) check if this manager is necessary when loading from file.
+  manual_instrumentation_manager_ = std::make_unique<ManualInstrumentationManager>();
+}
+
+OrbitApp::OrbitApp(std::shared_ptr<grpc::Channel> grpc_channel,
+                   std::unique_ptr<ProcessManager> process_manager,
+                   std::unique_ptr<ProcessData> process,
+                   std::unique_ptr<MainThreadExecutor> main_thread_executer)
+    : grpc_channel_(std::move(grpc_channel)),
+      main_thread_executor_(std::move(main_thread_executer)),
+      process_manager_(std::move(process_manager)),
+      process_(std::move(process)) {
+  thread_pool_ = ThreadPool::Create(4 /*min_size*/, 256 /*max_size*/, absl::Seconds(1));
+  main_thread_id_ = std::this_thread::get_id();
+  data_manager_ = std::make_unique<DataManager>(main_thread_id_);
+  module_manager_ = std::make_unique<OrbitClientData::ModuleManager>();
+  manual_instrumentation_manager_ = std::make_unique<ManualInstrumentationManager>();
+}
+
+// TODO (170468590) remove when not needed anymore
 OrbitApp::OrbitApp(ApplicationOptions&& options,
                    std::unique_ptr<MainThreadExecutor> main_thread_executor)
     : options_(std::move(options)), main_thread_executor_(std::move(main_thread_executor)) {
@@ -275,6 +302,36 @@ void OrbitApp::OnValidateFramePointers(std::vector<const ModuleData*> modules_to
 }
 
 std::unique_ptr<OrbitApp> OrbitApp::Create(
+    std::unique_ptr<MainThreadExecutor> main_thread_executer) {
+  auto app = std::make_unique<OrbitApp>(std::move(main_thread_executer));
+
+#ifdef _WIN32
+  oqpi_tk::start_default_scheduler();
+#endif
+
+  app->LoadFileMapping();
+
+  return app;
+}
+
+std::unique_ptr<OrbitApp> OrbitApp::Create(
+    std::shared_ptr<grpc::Channel> grpc_channel, std::unique_ptr<ProcessManager> process_manager,
+    std::unique_ptr<ProcessData> process,
+    std::unique_ptr<MainThreadExecutor> main_thread_executer) {
+  auto app = std::make_unique<OrbitApp>(std::move(grpc_channel), std::move(process_manager),
+                                        std::move(process), std::move(main_thread_executer));
+
+#ifdef _WIN32
+  oqpi_tk::start_default_scheduler();
+#endif
+
+  app->LoadFileMapping();
+
+  return app;
+}
+
+// TODO (170468590) remove when not needed anymore
+std::unique_ptr<OrbitApp> OrbitApp::Create(
     ApplicationOptions&& options, std::unique_ptr<MainThreadExecutor> main_thread_executor) {
   auto app = std::make_unique<OrbitApp>(std::move(options), std::move(main_thread_executor));
 
@@ -288,33 +345,38 @@ std::unique_ptr<OrbitApp> OrbitApp::Create(
 }
 
 void OrbitApp::PostInit() {
-  if (!options_.grpc_server_address.empty()) {
+  if (grpc_channel_ == nullptr && !options_.grpc_server_address.empty()) {
     grpc_channel_ = grpc::CreateCustomChannel(
         options_.grpc_server_address, grpc::InsecureChannelCredentials(), grpc::ChannelArguments());
     if (!grpc_channel_) {
       ERROR("Unable to create GRPC channel to %s", options_.grpc_server_address);
     }
-
+  }
+  if (grpc_channel_ != nullptr) {
     capture_client_ = std::make_unique<CaptureClient>(grpc_channel_, this);
 
-    // TODO: Replace refresh_timeout with config option. Let users to modify it.
-    process_manager_ = ProcessManager::Create(grpc_channel_, absl::Milliseconds(1000));
+    // TODO(170468590) probably remove all this, since it lives in ProfilingTargetDialog
+    if (process_manager_ == nullptr) {
+      // TODO: Replace refresh_timeout with config option. Let users to modify it.
+      process_manager_ = ProcessManager::Create(grpc_channel_, absl::Milliseconds(1000));
 
-    auto callback = [this](ProcessManager* process_manager) {
-      main_thread_executor_->Schedule([this, process_manager]() {
-        const std::vector<ProcessInfo>& process_infos = process_manager->GetProcessList();
-        data_manager_->UpdateProcessInfos(process_infos);
-        processes_data_view_->SetProcessList(process_infos);
+      auto callback = [this](ProcessManager* process_manager) {
+        main_thread_executor_->Schedule([this, process_manager]() {
+          const std::vector<ProcessInfo>& process_infos = process_manager->GetProcessList();
+          data_manager_->UpdateProcessInfos(process_infos);
+          processes_data_view_->SetProcessList(process_infos);
 
-        if (GetSelectedProcess() == nullptr && processes_data_view_->GetFirstProcessId() != -1) {
-          processes_data_view_->SelectProcess(processes_data_view_->GetFirstProcessId());
-        }
-        FireRefreshCallbacks(DataViewType::kProcesses);
-      });
-    };
+          if (GetSelectedProcess() == nullptr && processes_data_view_->GetFirstProcessId() != -1) {
+            processes_data_view_->SelectProcess(processes_data_view_->GetFirstProcessId());
+          }
+          FireRefreshCallbacks(DataViewType::kProcesses);
+        });
+      };
 
-    process_manager_->SetProcessListUpdateListener(callback);
-
+      process_manager_->SetProcessListUpdateListener(callback);
+    } else {
+      UpdateProcessAndModuleList();
+    }
     frame_pointer_validator_client_ =
         std::make_unique<FramePointerValidatorClient>(this, grpc_channel_);
 
@@ -488,7 +550,9 @@ void OrbitApp::Disassemble(int32_t pid, const FunctionInfo& function) {
 void OrbitApp::OnExit() {
   AbortCapture();
 
-  process_manager_->Shutdown();
+  if (process_manager_ != nullptr) {
+    process_manager_->Shutdown();
+  }
   thread_pool_->ShutdownAndWait();
 
   GOrbitApp = nullptr;
@@ -751,6 +815,7 @@ void OrbitApp::OnLoadCapture(const std::string& file_name) {
     capture_loading_cancellation_requested_ = false;
     capture_deserializer::Load(file_name, this, module_manager_.get(),
                                &capture_loading_cancellation_requested_);
+    main_thread_executor_->Schedule([this] { disable_symbols_callback_(); });
   });
 
   DoZoom = true;  // TODO: remove global, review logic
@@ -770,7 +835,7 @@ void OrbitApp::FireRefreshCallbacks(DataViewType type) {
 }
 
 bool OrbitApp::StartCapture() {
-  const ProcessData* process = data_manager_->selected_process();
+  const ProcessData* process = GetSelectedProcess();
   if (process == nullptr) {
     SendErrorToUi("Error starting capture",
                   "No process selected. Please select a target process for the capture.");
@@ -795,6 +860,7 @@ bool OrbitApp::StartCapture() {
   UserDefinedCaptureData user_defined_capture_data =
       data_manager_->mutable_user_defined_capture_data();
 
+  CHECK(capture_client_ != nullptr);
   ErrorMessageOr<void> result = capture_client_->StartCapture(
       thread_pool_.get(), *process, *module_manager_, std::move(selected_functions_map),
       std::move(selected_tracepoints), std::move(user_defined_capture_data), enable_introspection);
@@ -817,6 +883,8 @@ void OrbitApp::StopCapture() {
 }
 
 void OrbitApp::AbortCapture() {
+  if (capture_client_ == nullptr) return;
+
   if (!capture_client_->TryAbortCapture()) {
     return;
   }
@@ -932,6 +1000,7 @@ void OrbitApp::LoadModuleOnRemote(ModuleData* module_data,
                           function_hashes_to_hook = std::move(function_hashes_to_hook),
                           frame_track_function_hashes = std::move(frame_track_function_hashes),
                           scoped_status = std::move(scoped_status)]() mutable {
+    CHECK(process_manager_ != nullptr);
     const auto result = process_manager_->FindDebugInfoFile(module_data->file_path());
 
     if (!result) {
@@ -1003,7 +1072,9 @@ void OrbitApp::LoadModules(
       continue;
     }
 
-    if (!absl::GetFlag(FLAGS_local)) {
+    // TODO(170468590) maybe come up with a better indicator whether orbit is connected than
+    // process_manager != nullptr
+    if (!absl::GetFlag(FLAGS_local) && process_manager_ != nullptr) {
       LoadModuleOnRemote(module, std::move(function_hashes_to_hook),
                          std::move(frame_track_function_hashes));
       continue;
@@ -1230,10 +1301,16 @@ void OrbitApp::LoadPreset(const std::shared_ptr<PresetFile>& preset_file) {
   FireRefreshCallbacks();
 }
 
-void OrbitApp::UpdateProcessAndModuleList(int32_t pid) {
-  CHECK(processes_data_view_->GetSelectedProcessId() == pid);
-  thread_pool_->Schedule([pid, this] {
-    ErrorMessageOr<std::vector<ModuleInfo>> result = process_manager_->LoadModuleList(pid);
+void OrbitApp::UpdateProcessAndModuleList(ProcessData* process) {
+  CHECK(process != nullptr);
+
+  // TODO(170468590) remove this when processes_data_view is gone
+  if (processes_data_view_ != nullptr) {
+    CHECK(processes_data_view_->GetSelectedProcessId() == process->pid());
+  }
+  thread_pool_->Schedule([process, this]() mutable {
+    ErrorMessageOr<std::vector<ModuleInfo>> result =
+        process_manager_->LoadModuleList(process->pid());
 
     if (result.has_error()) {
       ERROR("Error retrieving modules: %s", result.error().message());
@@ -1241,21 +1318,23 @@ void OrbitApp::UpdateProcessAndModuleList(int32_t pid) {
       return;
     }
 
-    main_thread_executor_->Schedule([pid, module_infos = std::move(result.value()), this] {
-      // Make sure that pid is actually what user has selected at
-      // the moment we arrive here. If not - ignore the result.
-      if (pid != processes_data_view_->GetSelectedProcessId()) {
-        return;
+    main_thread_executor_->Schedule([process, module_infos = std::move(result.value()),
+                                     this]() mutable {
+      // TODO(170468590) remove this when processes_data_view is gone
+      if (processes_data_view_ != nullptr) {
+        // Make sure that pid is actually what user has selected at
+        // the moment we arrive here. If not - ignore the result.
+        if (process->pid() != processes_data_view_->GetSelectedProcessId()) {
+          return;
+        }
       }
 
-      ProcessData* process = data_manager_->GetMutableProcessByPid(pid);
-      CHECK(process != nullptr);
       process->UpdateModuleInfos(module_infos);
 
       // If no process was selected before, or the process changed
-      if (GetSelectedProcess() == nullptr || pid != GetSelectedProcess()->pid()) {
+      if (GetSelectedProcess() == nullptr || process->pid() != GetSelectedProcess()->pid()) {
         data_manager_->ClearSelectedFunctions();
-        data_manager_->set_selected_process(pid);
+        data_manager_->set_selected_process(process->pid());
       }
 
       // Updating the list of loaded modules (in memory) of a process, can mean that a process has
@@ -1340,7 +1419,7 @@ void OrbitApp::DeselectFunction(const orbit_client_protos::FunctionInfo& func) {
 }
 
 [[nodiscard]] bool OrbitApp::IsFunctionSelected(uint64_t absolute_address) const {
-  const ProcessData* process = data_manager_->selected_process();
+  const ProcessData* process = GetSelectedProcess();
   if (process == nullptr) return false;
 
   const auto result = process->FindModuleByAddress(absolute_address);
@@ -1472,8 +1551,9 @@ DataView* OrbitApp::GetOrCreateDataView(DataViewType type) {
     case DataViewType::kProcesses:
       if (!processes_data_view_) {
         processes_data_view_ = std::make_unique<ProcessesDataView>();
-        processes_data_view_->SetSelectionListener(
-            [&](int32_t pid) { UpdateProcessAndModuleList(pid); });
+        processes_data_view_->SetSelectionListener([&](int32_t pid) {
+          UpdateProcessAndModuleList(data_manager_->GetMutableProcessByPid(pid));
+        });
         panels_.push_back(processes_data_view_.get());
       }
       return processes_data_view_.get();

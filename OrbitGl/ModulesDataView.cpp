@@ -193,7 +193,7 @@ void ModulesDataView::OnRefreshButtonClicked() {
     LOG("Unable to refresh module list, no process selected");
     return;
   }
-  GOrbitApp->UpdateProcessAndModuleList(process->pid());
+  GOrbitApp->UpdateProcessAndModuleList();
 }
 
 bool ModulesDataView::GetDisplayColor(int row, int /*column*/, unsigned char& red,

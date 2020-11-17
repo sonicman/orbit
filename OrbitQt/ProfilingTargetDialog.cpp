@@ -136,7 +136,7 @@ void ProfilingTargetDialog::SetupUi() {
         // on_selectProcessButton_clicked();
         dialog_result_ = connection_artifacts_;
         // ui_->selectProcessButton->setEnabled(true);
-        this->EnableConfirm("Select Process");
+        this->EnableConfirm("Confirm Process");
       });
 
   QObject::connect(ui_->buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -249,11 +249,14 @@ void ProfilingTargetDialog::DeployOrbitService() {
   connection_artifacts_->process_manager_->SetProcessListUpdateListener(
       [this](ProcessManager* process_manager) {
         main_thread_executer_->Schedule([this, process_manager]() {
+          bool had_processes_before = process_model_.HasProcesses();
           process_model_.SetProcesses(process_manager->GetProcessList());
           // ui_->processesTableView->verticalHeader()->resizeSections(QHeaderView::ResizeToContents);
           // LOG("row 0 height %d", ui_->processesTableView->rowHeight(0));
+          if (!had_processes_before) return;
           ui_->processesTableView->setEnabled(true);
           ui_->processesTableOverlay->Deactivate();
+          ui_->processesTableView->selectRow(0);
         });
       });
 }
@@ -327,6 +330,9 @@ void ProfilingTargetDialog::ReloadInstances() {
 void ProfilingTargetDialog::on_loadCaptureRadioButton_toggled(bool checked) {
   ui_->loadFromFileButton->setEnabled(checked);
   // ui_->captureTableView->setEnabled(checked);
+  if (checked && file_to_load_.isEmpty()) {
+    on_loadFromFileButton_clicked();
+  }
 }
 
 void ProfilingTargetDialog::on_connectToStadiaInstanceRadioButton_toggled(bool checked) {
@@ -361,7 +367,7 @@ void ProfilingTargetDialog::on_loadFromFileButton_clicked() {
   if (!file.isEmpty()) {
     file_to_load_ = file;
     dialog_result_ = file;
-    ui_->chosen_file_label->setText(file);
+    ui_->chosen_file_label->setText(QFileInfo(file).fileName());
     EnableConfirm("Load Capture");
     // DisconnectFromInstance();
     // accept();

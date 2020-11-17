@@ -69,9 +69,20 @@ class Process;
 
 class OrbitApp final : public DataViewFactory, public CaptureListener {
  public:
+  OrbitApp(std::unique_ptr<MainThreadExecutor> main_thread_executer);
+  OrbitApp(std::shared_ptr<grpc::Channel> grpc_channel,
+           std::unique_ptr<ProcessManager> process_manager, std::unique_ptr<ProcessData> process,
+           std::unique_ptr<MainThreadExecutor> main_thread_executer);
+  // TODO (170468590) remove when not needed anymore
   OrbitApp(ApplicationOptions&& options, std::unique_ptr<MainThreadExecutor> main_thread_executor);
   ~OrbitApp() override;
 
+  static std::unique_ptr<OrbitApp> Create(std::unique_ptr<MainThreadExecutor> main_thread_executer);
+  static std::unique_ptr<OrbitApp> Create(std::shared_ptr<grpc::Channel> grpc_channel,
+                                          std::unique_ptr<ProcessManager> process_manager,
+                                          std::unique_ptr<ProcessData> process,
+                                          std::unique_ptr<MainThreadExecutor> main_thread_executer);
+  // TODO (170468590) remove when not needed anymore
   static std::unique_ptr<OrbitApp> Create(ApplicationOptions&& options,
                                           std::unique_ptr<MainThreadExecutor> main_thread_executor);
 
@@ -241,6 +252,11 @@ class OrbitApp final : public DataViewFactory, public CaptureListener {
     selection_bottom_up_view_callback_ = std::move(callback);
   }
 
+  using DisableSymbolsCallback = std::function<void()>;
+  void SetDisableSymbolsCallback(DisableSymbolsCallback callback) {
+    disable_symbols_callback_ = std::move(callback);
+  }
+
   using SaveFileCallback = std::function<std::string(const std::string& extension)>;
   void SetSaveFileCallback(SaveFileCallback callback) { save_file_callback_ = std::move(callback); }
   void FireRefreshCallbacks(DataViewType type = DataViewType::kAll);
@@ -269,7 +285,9 @@ class OrbitApp final : public DataViewFactory, public CaptureListener {
       const std::vector<ModuleData*>& modules,
       absl::flat_hash_map<std::string, std::vector<uint64_t>> function_hashes_to_hook_map = {},
       absl::flat_hash_map<std::string, std::vector<uint64_t>> frame_track_function_hashes_map = {});
-  void UpdateProcessAndModuleList(int32_t pid);
+  // TODO(170468590) clean this up
+  void UpdateProcessAndModuleList() { UpdateProcessAndModuleList(process_.get()); }
+  void UpdateProcessAndModuleList(ProcessData* process);
 
   void UpdateAfterSymbolLoading();
   void UpdateAfterCaptureCleared();
@@ -284,10 +302,32 @@ class OrbitApp final : public DataViewFactory, public CaptureListener {
   [[nodiscard]] DataView* GetOrCreateDataView(DataViewType type) override;
   [[nodiscard]] DataView* GetOrCreateSelectionCallstackDataView();
 
+  std::unique_ptr<MainThreadExecutor> RetrieveMainThreadExecuter() {
+    return std::move(main_thread_executor_);
+  }
+  void SetProcess(std::unique_ptr<ProcessData> process) {
+    CHECK(process_ == nullptr);
+    CHECK(process != nullptr);
+    process_ = std::move(process);
+  }
+  std::unique_ptr<ProcessData> RetrieveProcess() { return std::move(process_); }
+  void SetGprcChannel(std::shared_ptr<grpc::Channel> grpc_channel) {
+    grpc_channel_ = std::move(grpc_channel);
+  }
+  void SetProcessManager(std::unique_ptr<ProcessManager> process_manager) {
+    CHECK(process_manager_ == nullptr);
+    CHECK(process_manager != nullptr);
+    process_manager_ = std::move(process_manager);
+  }
   [[nodiscard]] ProcessManager* GetProcessManager() { return process_manager_.get(); }
+  [[nodiscard]] std::unique_ptr<ProcessManager> RetriveProcessManager() {
+    return std::move(process_manager_);
+  }
   [[nodiscard]] ThreadPool* GetThreadPool() { return thread_pool_.get(); }
   [[nodiscard]] MainThreadExecutor* GetMainThreadExecutor() { return main_thread_executor_.get(); }
   [[nodiscard]] const ProcessData* GetSelectedProcess() const {
+    if (process_ != nullptr) return process_.get();
+    // TODO (170468590) probably remove datamanager holding multiple processes
     return data_manager_->selected_process();
   }
   [[nodiscard]] ManualInstrumentationManager* GetManualInstrumentationManager() {
@@ -380,6 +420,7 @@ class OrbitApp final : public DataViewFactory, public CaptureListener {
   CallTreeViewCallback selection_top_down_view_callback_;
   CallTreeViewCallback bottom_up_view_callback_;
   CallTreeViewCallback selection_bottom_up_view_callback_;
+  DisableSymbolsCallback disable_symbols_callback_;
   SaveFileCallback save_file_callback_;
   ClipboardCallback clipboard_callback_;
   SecureCopyCallback secure_copy_callback_;
@@ -420,6 +461,8 @@ class OrbitApp final : public DataViewFactory, public CaptureListener {
   const SymbolHelper symbol_helper_;
 
   StatusListener* status_listener_ = nullptr;
+
+  std::unique_ptr<ProcessData> process_;
 
   std::unique_ptr<FramePointerValidatorClient> frame_pointer_validator_client_;
 

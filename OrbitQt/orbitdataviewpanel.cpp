@@ -35,6 +35,7 @@ void OrbitDataViewPanel::Initialize(DataView* data_view, SelectionType selection
 
   if (ui->treeView->HasRefreshButton()) {
     ui->refreshButton->show();
+    ui->horizontalLayout->setContentsMargins(0, 0, 6, 0);
   } else {
     ui->refreshButton->hide();
   }

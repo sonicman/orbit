@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>976</width>
+    <width>1163</width>
     <height>671</height>
    </rect>
   </property>
@@ -50,184 +50,160 @@ QPushButton:disabled {
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QTabWidget" name="MainTabWidget">
-       <property name="currentIndex">
-        <number>0</number>
+      <widget class="QFrame" name="captureFrame">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
        </property>
-       <widget class="QWidget" name="HomeTab">
-        <attribute name="title">
-         <string>Home</string>
-        </attribute>
-        <layout class="QGridLayout" name="gridLayout_7">
-         <item row="0" column="1">
-          <widget class="QSplitter" name="HomeHorizontalSplitter">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="orientation">
-            <enum>Qt::Vertical</enum>
-           </property>
-           <widget class="QSplitter" name="HomeVerticalSplitter">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="baseSize">
-             <size>
-              <width>0</width>
-              <height>0</height>
-             </size>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <widget class="ProcessLauncherWidget" name="ProcessesList" native="true"/>
-            <widget class="OrbitDataViewPanel" name="SessionList" native="true"/>
-           </widget>
-           <widget class="OrbitDataViewPanel" name="ModulesList" native="true"/>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QWidget" name="CaptureTab">
-        <attribute name="title">
-         <string>Capture</string>
-        </attribute>
-        <layout class="QVBoxLayout" name="verticalLayout">
-         <item>
-          <widget class="QToolBar" name="capture_toolbar">
-           <property name="enabled">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <addaction name="actionToggle_Capture"/>
-           <addaction name="actionClear_Capture"/>
-           <addaction name="actionOpen_Capture"/>
-           <addaction name="actionSave_Capture"/>
-           <addaction name="actionHelp"/>
-          </widget>
-         </item>
-         <item>
-          <widget class="QFrame" name="filterPanel">
-           <property name="accessibleName">
-            <string/>
-           </property>
-           <property name="frameShape">
-            <enum>QFrame::NoFrame</enum>
-           </property>
-           <property name="frameShadow">
-            <enum>QFrame::Raised</enum>
-           </property>
-           <property name="lineWidth">
+       <property name="styleSheet">
+        <string notr="true">background-color: rgb(68, 68, 68);border-radius: 3px;</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,1">
+        <item>
+         <widget class="QToolBar" name="capture_toolbar">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <addaction name="actionToggle_Capture"/>
+          <addaction name="actionClear_Capture"/>
+          <addaction name="actionOpen_Capture"/>
+          <addaction name="actionSave_Capture"/>
+          <addaction name="actionHelp"/>
+         </widget>
+        </item>
+        <item>
+         <widget class="QFrame" name="filterPanel">
+          <property name="accessibleName">
+           <string/>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::NoFrame</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Raised</enum>
+          </property>
+          <property name="lineWidth">
+           <number>0</number>
+          </property>
+          <layout class="QHBoxLayout" name="horizontalLayout">
+           <property name="topMargin">
             <number>0</number>
            </property>
-           <layout class="QHBoxLayout" name="horizontalLayout">
-            <property name="topMargin">
-             <number>0</number>
-            </property>
-            <property name="bottomMargin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QLineEdit" name="filterTracks">
-              <property name="accessibleName">
-               <string>filter</string>
-              </property>
-              <property name="styleSheet">
-               <string notr="true">background-image: url(:/actions/filter_list_small_offset);</string>
-              </property>
-              <property name="placeholderText">
-               <string>Filter Tracks</string>
-              </property>
-              <property name="clearButtonEnabled">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLineEdit" name="filterFunctions">
-              <property name="accessibleName">
-               <string>filter</string>
-              </property>
-              <property name="placeholderText">
-               <string>Filter Functions</string>
-              </property>
-              <property name="clearButtonEnabled">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="label">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>24</width>
-                <height>24</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>24</width>
-                <height>24</height>
-               </size>
-              </property>
-              <property name="text">
-               <string/>
-              </property>
-              <property name="pixmap">
-               <pixmap resource="../icons/orbiticons.qrc">:/actions/access_time</pixmap>
-              </property>
-              <property name="scaledContents">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="timerLabel">
-              <property name="text">
-               <string>1s</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-         <item>
-          <widget class="OrbitGLWidget" name="CaptureGLWidget"/>
-         </item>
-        </layout>
-        <zorder>CaptureGLWidget</zorder>
-        <zorder>capture_toolbar</zorder>
-        <zorder>filterPanel</zorder>
-       </widget>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QLineEdit" name="filterTracks">
+             <property name="accessibleName">
+              <string>filter</string>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">background-image: url(:/actions/filter_list_small_offset);background-color: black;</string>
+             </property>
+             <property name="placeholderText">
+              <string>Filter Tracks</string>
+             </property>
+             <property name="clearButtonEnabled">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="filterFunctions">
+             <property name="accessibleName">
+              <string>filter</string>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">background-color: black;</string>
+             </property>
+             <property name="placeholderText">
+              <string>Filter Functions</string>
+             </property>
+             <property name="clearButtonEnabled">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="label">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>24</width>
+               <height>24</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>24</width>
+               <height>24</height>
+              </size>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+             <property name="pixmap">
+              <pixmap resource="../icons/orbiticons.qrc">:/actions/access_time</pixmap>
+             </property>
+             <property name="scaledContents">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="timerLabel">
+             <property name="text">
+              <string>1s</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="OrbitGLWidget" name="CaptureGLWidget"/>
+        </item>
+       </layout>
+       <zorder>CaptureGLWidget</zorder>
+       <zorder>capture_toolbar</zorder>
+       <zorder>filterPanel</zorder>
       </widget>
       <widget class="QTabWidget" name="RightTabWidget">
        <property name="currentIndex">
         <number>0</number>
        </property>
-       <widget class="QWidget" name="FunctionsTab">
+       <widget class="QWidget" name="symbolsBox">
         <attribute name="title">
-         <string>Functions</string>
+         <string>Symbols</string>
         </attribute>
-        <layout class="QGridLayout" name="gridLayout_2">
+        <layout class="QGridLayout" name="symbolsGridLayout">
          <item row="0" column="0">
-          <widget class="OrbitDataViewPanel" name="FunctionsList" native="true"/>
+          <widget class="QSplitter" name="splitter_3">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <widget class="QSplitter" name="splitter">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <widget class="OrbitDataViewPanel" name="PresetsList" native="true"/>
+            <widget class="OrbitDataViewPanel" name="ModulesList" native="true"/>
+           </widget>
+           <widget class="OrbitDataViewPanel" name="FunctionsList" native="true"/>
+          </widget>
          </item>
         </layout>
        </widget>
@@ -390,7 +366,7 @@ QPushButton:disabled {
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>976</width>
+     <width>1163</width>
      <height>21</height>
     </rect>
    </property>
@@ -404,6 +380,7 @@ QPushButton:disabled {
     <addaction name="actionOpen_Preset"/>
     <addaction name="actionSave_Preset_As"/>
     <addaction name="separator"/>
+    <addaction name="actionEnd_Session"/>
     <addaction name="actionQuit"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
@@ -538,6 +515,15 @@ QPushButton:disabled {
     <string>Help</string>
    </property>
   </action>
+  <action name="actionEnd_Session">
+   <property name="icon">
+    <iconset resource="../icons/orbiticons.qrc">
+     <normaloff>:/actions/keyboard_arrow_left</normaloff>:/actions/keyboard_arrow_left</iconset>
+   </property>
+   <property name="text">
+    <string>End Session</string>
+   </property>
+  </action>
   <action name="actionQuit">
    <property name="icon">
     <iconset resource="../icons/orbiticons.qrc">
@@ -629,12 +615,6 @@ QPushButton:disabled {
    <class>OrbitGLWidget</class>
    <extends>QOpenGLWidget</extends>
    <header>orbitglwidget.h</header>
-  </customwidget>
-  <customwidget>
-   <class>ProcessLauncherWidget</class>
-   <extends>QWidget</extends>
-   <header>processlauncherwidget.h</header>
-   <container>1</container>
   </customwidget>
   <customwidget>
    <class>OrbitLiveFunctions</class>

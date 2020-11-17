@@ -8,5 +8,6 @@
     <file>tutorial/grey_arrow_left.png</file>
     <file>tutorial/grey_arrow_right.png</file>
     <file>tutorial/grey_arrow_up.png</file>
+    <file>grey_arrow_up.png</file>
   </qresource>
 </RCC>

@@ -4,6 +4,7 @@
 
 #include "orbitmainwindow.h"
 
+#include <QBoxLayout>
 #include <QBuffer>
 #include <QCheckBox>
 #include <QClipboard>
@@ -11,13 +12,16 @@
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QLabel>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPixmap>
 #include <QProgressDialog>
 #include <QSettings>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolTip>
+#include <QWidget>
 #include <utility>
 
 #include "App.h"
@@ -53,7 +57,7 @@ extern QMenu* GContextMenu;
 
 OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
                                  OrbitQt::ServiceDeployManager* service_deploy_manager,
-                                 uint32_t font_size)
+                                 uint32_t font_size, const QString& target_label_message)
     : QMainWindow(nullptr), m_App(a_App), ui(new Ui::OrbitMainWindow) {
   DataViewFactory* data_view_factory = GOrbitApp.get();
 
@@ -61,13 +65,13 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
   // Cannot save a capture as long as no capture has been loaded or captured.
   ui->actionSave_Capture->setDisabled(true);
 
-  ui->ProcessesList->SetDataView(data_view_factory->GetOrCreateDataView(DataViewType::kProcesses));
+  // ui->ProcessesList->SetDataView(data_view_factory->GetOrCreateDataView(DataViewType::kProcesses));
 
   QList<int> sizes;
   sizes.append(5000);
   sizes.append(5000);
-  ui->HomeVerticalSplitter->setSizes(sizes);
-  ui->HomeHorizontalSplitter->setSizes(sizes);
+  // ui->HomeVerticalSplitter->setSizes(sizes);
+  // ui->HomeHorizontalSplitter->setSizes(sizes);
   ui->splitter_2->setSizes(sizes);
 
   status_listener_ = StatusListenerImpl::Create(statusBar());
@@ -81,8 +85,9 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
     ui->actionSave_Capture->setDisabled(true);
     ui->actionOpen_Preset->setDisabled(true);
     ui->actionSave_Preset_As->setDisabled(true);
-    ui->HomeTab->setDisabled(true);
+    ui->symbolsBox->setDisabled(true);
     setWindowTitle({});
+    hint_frame_->setVisible(false);
   });
 
   constexpr const char* kFinalizingCaptureMessage =
@@ -117,7 +122,8 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
     ui->actionSave_Capture->setDisabled(false);
     ui->actionOpen_Preset->setDisabled(false);
     ui->actionSave_Preset_As->setDisabled(false);
-    ui->HomeTab->setDisabled(false);
+    ui->symbolsBox->setDisabled(false);
+    LOG("Capture finished callback called");
   };
   GOrbitApp->SetCaptureStoppedCallback(capture_finished_callback);
   GOrbitApp->SetCaptureFailedCallback(capture_finished_callback);
@@ -219,7 +225,38 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
     return service_deploy_manager->CopyFileToLocal(std::string{source}, std::string{destination});
   });
 
+  GOrbitApp->SetDisableSymbolsCallback([this] {
+    // ui->symbolsBox->setDisabled(true);
+    LOG("symbols box enabled: %d", ui->symbolsBox->isEnabled());
+  });
+
   ui->CaptureGLWidget->Initialize(GlCanvas::CanvasType::kCaptureWindow, this, font_size);
+
+  hint_frame_ = new QFrame();
+  hint_frame_->setStyleSheet("background: transparent");
+  auto* hint_layout = new QVBoxLayout();
+  hint_layout->setSpacing(0);
+  hint_layout->setMargin(0);
+  hint_frame_->setLayout(hint_layout);
+  auto* hint_arrow = new QLabel();
+  hint_arrow->setPixmap(QPixmap(":/images/grey_arrow_up.png").scaledToHeight(12));
+  hint_layout->addWidget(hint_arrow);
+  auto* hint_message = new QLabel("Start a capture here");
+  hint_message->setAlignment(Qt::AlignCenter);
+  hint_layout->addWidget(hint_message);
+  hint_message->setStyleSheet(
+      "background-color: rgb(117, 117, 117);"
+      "border-top-left-radius: 1px;"
+      "border-top-right-radius: 4px;"
+      "border-bottom-right-radius: 4px;"
+      "border-bottom-left-radius: 4px;");
+  hint_layout->setStretchFactor(hint_message, 1);
+
+  // TODO maybe there is a better way
+  hint_frame_->setParent(ui->captureFrame);
+
+  hint_frame_->move(17, 42);
+  hint_frame_->resize(140, 45);
 
   if (absl::GetFlag(FLAGS_devmode)) {
     ui->debugOpenGLWidget->Initialize(GlCanvas::CanvasType::kDebug, this, font_size);
@@ -234,7 +271,7 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
                                 SelectionType::kExtended, FontType::kDefault);
   ui->CallStackView->Initialize(data_view_factory->GetOrCreateDataView(DataViewType::kCallstack),
                                 SelectionType::kExtended, FontType::kDefault);
-  ui->SessionList->Initialize(data_view_factory->GetOrCreateDataView(DataViewType::kPresets),
+  ui->PresetsList->Initialize(data_view_factory->GetOrCreateDataView(DataViewType::kPresets),
                               SelectionType::kDefault, FontType::kDefault,
                               /*is_main_instance=*/true, /*uniform_row_height=*/false,
                               /*text_alignment=*/Qt::AlignTop | Qt::AlignLeft);
@@ -260,6 +297,32 @@ OrbitMainWindow::OrbitMainWindow(QApplication* a_App,
   if (absl::GetFlag(FLAGS_enable_tutorials_feature)) {
     InitTutorials(this);
   }
+
+  auto* target_widget = new QWidget();
+  target_widget->setStyleSheet("background-color: rgb(68,68,68)");
+  auto* target_label = new QLabel(target_label_message);
+  target_label->setContentsMargins(6, 0, 0, 0);
+  if (GOrbitApp->GetSelectedProcess() != nullptr) {
+    target_label->setStyleSheet("color: rgb(41,218,130)");
+  }
+  auto* disconnect_target_button = new QPushButton("End Session");
+  auto* target_layout = new QHBoxLayout();
+  target_layout->addWidget(target_label);
+  target_layout->addWidget(disconnect_target_button);
+  target_layout->setMargin(0);
+  target_widget->setLayout(target_layout);
+
+  ui->menuBar->setCornerWidget(target_widget, Qt::TopRightCorner);
+
+  QObject::connect(disconnect_target_button, &QPushButton::clicked, this, [this]() {
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this, QApplication::applicationName(),
+        "This discards any unsaved progress. Are you sure you want to continue?");
+
+    if (reply == QMessageBox::Yes) {
+      QApplication::exit(1);
+    }
+  });
 
   SetupCaptureToolbar();
 
@@ -346,10 +409,11 @@ void OrbitMainWindow::UpdatePanel(DataViewType a_Type) {
       ui->ModulesList->Refresh();
       break;
     case DataViewType::kProcesses:
-      ui->ProcessesList->Refresh();
+      ERROR("TODO: remove");
+      // ui->ProcessesList->Refresh();
       break;
     case DataViewType::kPresets:
-      ui->SessionList->Refresh();
+      ui->PresetsList->Refresh();
       break;
     case DataViewType::kSampling:
       ui->samplingReport->RefreshCallstackView();
@@ -558,6 +622,8 @@ void OrbitMainWindow::on_actionOpen_Preset_triggered() {
   }
 }
 
+void OrbitMainWindow::on_actionEnd_Session_triggered() { QApplication::exit(1); }
+
 void OrbitMainWindow::on_actionQuit_triggered() {
   close();
   QApplication::quit();
@@ -652,7 +718,7 @@ void OrbitMainWindow::on_actionOpen_Capture_triggered() {
 void OrbitMainWindow::OpenCapture(const std::string& filepath) {
   GOrbitApp->OnLoadCapture(filepath);
   setWindowTitle(QString::fromStdString(filepath));
-  ui->MainTabWidget->setCurrentWidget(ui->CaptureTab);
+  // ui->MainTabWidget->setCurrentWidget(ui->CaptureTab);
 }
 
 void OrbitMainWindow::OpenDisassembly(std::string a_String, DisassemblyReport report) {
@@ -698,6 +764,7 @@ void OrbitMainWindow::on_actionServiceStackOverflow_triggered() {
 void OrbitMainWindow::OnCaptureCleared() {
   ui->liveFunctions->Reset();
   ui->actionSave_Capture->setDisabled(true);
+  hint_frame_->setVisible(true);
 }
 
 void OrbitMainWindow::closeEvent(QCloseEvent* event) {

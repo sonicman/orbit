@@ -15,6 +15,7 @@
 #include <QProgressDialog>
 #include <QStyleFactory>
 #include <optional>
+#include <variant>
 
 #ifdef _WIN32
 #include <process.h>
@@ -195,7 +196,7 @@ static outcome::result<void> RunUiInstance(
 }
 
 static outcome::result<void> RunBetaUiInstance(
-    QApplication* /*app*/, std::optional<OrbitQt::DeploymentConfiguration> deployment_configuration,
+    QApplication* app, std::optional<OrbitQt::DeploymentConfiguration> deployment_configuration,
     const Context* ssh_context) {
   // TODO(170468590) handle --local flag
   if (!deployment_configuration) {
@@ -210,18 +211,97 @@ static outcome::result<void> RunBetaUiInstance(
   std::unique_ptr<MainThreadExecutor> main_thread_executer = CreateMainThreadExecutor();
   OrbitQt::ProfilingTargetDialog target_dialog{&connection_artifacts, main_thread_executer.get()};
 
-  const auto dialog_result = target_dialog.Exec();
-  if (std::holds_alternative<std::monostate>(dialog_result)) {
-    // User closed dialog
-  } else if (std::holds_alternative<const OrbitQt::ConnectionArtifacts*>(dialog_result)) {
-    LOG("selected process: %s",
-        std::get<const OrbitQt::ConnectionArtifacts*>(dialog_result)->process_->name());
-  } else if (std::holds_alternative<QString>(dialog_result)) {
-    LOG("selected file: %s", std::get<QString>(dialog_result).toStdString());
+  std::optional<std::error_code> error;
+
+  while (true) {
+    error = std::nullopt;
+    const auto dialog_result = target_dialog.Exec();
+
+    // GOrbitApp = OrbitApp::Create(std::move(main_thread_executer));
+    QString target_label_message;
+    if (std::holds_alternative<std::monostate>(dialog_result)) {
+      // User closed dialog
+      break;
+    } else if (std::holds_alternative<const OrbitQt::ConnectionArtifacts*>(dialog_result)) {
+      LOG("selected process: %s",
+          std::get<const OrbitQt::ConnectionArtifacts*>(dialog_result)->process_->name());
+      target_label_message = QString("%1 @ %2")
+                                 .arg(QString::fromStdString(connection_artifacts.process_->name()))
+                                 .arg(connection_artifacts.selected_instance_->display_name);
+      GOrbitApp = OrbitApp::Create(
+          connection_artifacts.grpc_channel_, std::move(connection_artifacts.process_manager_),
+          std::move(connection_artifacts.process_), std::move(main_thread_executer));
+    } else if (std::holds_alternative<QString>(dialog_result)) {
+      const QString& capture_path = std::get<QString>(dialog_result);
+      LOG("selected file: %s", capture_path.toStdString());
+      target_label_message = QFileInfo(capture_path).fileName();
+      GOrbitApp = OrbitApp::Create(std::move(main_thread_executer));
+    }
+
+    {  // Scoping of QT UI Resources
+      constexpr uint32_t kDefaultFontSize = 14;
+
+      OrbitMainWindow w(app, connection_artifacts.service_deploy_manager_.get(), kDefaultFontSize,
+                        target_label_message);
+
+      // "resize" is required to make "showMaximized" work properly.
+      w.resize(1280, 720);
+      w.showMaximized();
+
+      auto error_handler = [&]() -> ScopedConnection {
+        if (connection_artifacts.service_deploy_manager_ == nullptr) {
+          return ScopedConnection();
+        }
+
+        return OrbitSshQt::ScopedConnection{QObject::connect(
+            connection_artifacts.service_deploy_manager_.get(),
+            &ServiceDeployManager::socketErrorOccurred,
+            connection_artifacts.service_deploy_manager_.get(), [&](std::error_code e) {
+              error = e;
+              w.close();
+              QApplication::quit();
+            })};
+      }();
+
+      if (std::holds_alternative<QString>(dialog_result)) {
+        w.OpenCapture(std::get<QString>(dialog_result).toStdString());
+      }
+
+      int rc = QApplication::exec();
+
+      std::unique_ptr<ProcessManager> tmp_manager = GOrbitApp->RetriveProcessManager();
+      if (tmp_manager != nullptr) {
+        connection_artifacts.process_manager_ = std::move(tmp_manager);
+      }
+      std::unique_ptr<ProcessData> tmp_process = GOrbitApp->RetrieveProcess();
+      if (tmp_process != nullptr) {
+        connection_artifacts.process_ = std::move(tmp_process);
+      }
+      main_thread_executer = GOrbitApp->RetrieveMainThreadExecuter();
+
+      if (rc == 0) {
+        break;
+      }
+      if (rc != 1) {
+        error = std::make_error_code(std::errc::operation_canceled);
+        break;
+      }
+
+      Orbit_ImGui_Shutdown();
+    }
+
+    GOrbitApp->OnExit();
+  }
+  if (connection_artifacts.process_manager_ != nullptr) {
+    connection_artifacts.process_manager_->Shutdown();
+    connection_artifacts.process_manager_ = nullptr;
   }
 
-  // TODO(antonrohr) continue here to start main window.
-  return outcome::success();
+  if (error) {
+    return outcome::failure(error.value());
+  } else {
+    return outcome::success();
+  }
 }
 
 static void StyleOrbit(QApplication& app) {
@@ -419,12 +499,10 @@ int main(int argc, char* argv[]) {
 
     if (absl::GetFlag(FLAGS_enable_ui_beta)) {
       auto result = RunBetaUiInstance(&app, deployment_configuration, &context.value());
-      if (result) {
-        return 0;
-      } else {
-        execv(path_to_executable.toLocal8Bit().constData(), original_argv);
-        UNREACHABLE();
+      if (!result) {
+        return 1;
       }
+      return 0;
     }
 
     while (true) {
